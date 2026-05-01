@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+.env
+.env.*.local
+
+runs/
+reports/
+tests-generated/test-results/
+playwright-report/
+.playwright-mcp/
+
+.omc/
+
+.DS_Store
+*.log
