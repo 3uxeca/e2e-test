@@ -127,3 +127,23 @@
 
 → 권한이 풀려도 산출물이 보존되지 않으면 비용만 늘어난다는 명확한 신호.
    결함 #2~#4 수정이 baseline 확보의 전제조건.
+
+---
+
+## 5. 적용된 수정 (Run #3 직전)
+
+| # | 결함 | 수정 위치 | 동작 |
+|---|---|---|---|
+| 2 | stage1 finalText 누락 | `src/sdk/client.ts` | 스트림 도중 assistant 메시지의 모든 text content block을 누적해, `SDKResultMessage.result`가 비어 있으면 누적분을 finalText로 사용한다. 어느 경로로 채워졌는지 `finalTextSource: 'result' \| 'fallback-assistant-text' \| 'sdk-error' \| 'none'`로 표시. |
+| 3 | raw 메시지 미영속화 | `src/sdk/client.ts` + `src/stages/_helpers.ts` | 단계마다 `runs/<id>/<stage>/messages.jsonl`에 모든 SDKMessage를 한 줄씩 JSON으로 저장. 사후 재현·분석 + Step 4 리포트 생성 입력으로 사용. |
+| 4 | stage1 프롬프트의 텍스트 출력 미명시 | `src/prompts/stage1.system.md` | 산출물 형식 절 위에 "도구 호출이 끝나면 마지막 메시지에 마크다운 전문을 반드시 텍스트로 출력하라"는 출력 규칙 절을 추가. 1차 라이브에서 실제로 발생한 결함을 명시 인용. |
+
+### 변경된 데이터 형상
+- `StageResult`에 `finalTextSource`, `costUsd`, `numTurns`, `permissionDenials` 노출.
+- `decisions.jsonl`의 `end` 엔트리에 `finalTextSource`, `finalTextChars` 추가.
+- 단계 디렉토리 산출물: `output.md` (기존), **`messages.jsonl` (신규)**.
+
+### Run #3 검증 가설
+- stage1 산출물 마크다운이 비어있지 않다 (chars > 0).
+- 산출물 출처가 `result` 또는 `fallback-assistant-text` 둘 중 하나로 명확히 기록된다.
+- 빈 산출물이 다시 발생하면 `messages.jsonl`로 원인을 사후 추적 가능하다.

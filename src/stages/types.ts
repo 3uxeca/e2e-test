@@ -36,6 +36,7 @@ export interface StageResult {
   costUsd: number;
   numTurns: number;
   permissionDenials: number;
+  finalTextSource: 'result' | 'fallback-assistant-text' | 'sdk-error' | 'none';
   error?: string;
 }
 

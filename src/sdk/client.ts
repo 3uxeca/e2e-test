@@ -1,3 +1,4 @@
+import { appendFileSync, openSync, closeSync } from 'node:fs';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { playwrightMcpServers } from '../mcp/playwright.js';
 import type { TokenGuard } from '../telemetry/token-guard.js';
@@ -10,10 +11,12 @@ export interface SdkRunOptions {
   cwd?: string;
   allowedTools?: string[];
   disallowedTools?: string[];
+  messagesLogPath?: string;
 }
 
 export interface SdkRunResult {
   finalText: string;
+  finalTextSource: 'result' | 'fallback-assistant-text' | 'sdk-error' | 'none';
   numTurns: number;
   durationMs: number;
   costUsd: number;
@@ -45,6 +48,26 @@ function deltaFromBetaUsage(u: BetaUsageLike | undefined): UsageDelta {
   };
 }
 
+interface BetaContentBlock {
+  type?: string;
+  text?: string;
+}
+
+function extractAssistantText(message: unknown): string {
+  const content = (message as { content?: BetaContentBlock[] } | undefined)?.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((b) => b?.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text!)
+    .join('');
+}
+
+function ensureLogFile(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  closeSync(openSync(path, 'w'));
+  return path;
+}
+
 export function createLiveSdkClient(): SdkClient {
   return {
     async run(opts, { usage, guard }) {
@@ -65,7 +88,10 @@ export function createLiveSdkClient(): SdkClient {
         abortController,
       };
 
-      let finalText = '';
+      const messagesLogPath = ensureLogFile(opts.messagesLogPath);
+      let resultText = '';
+      let assistantTextBuffer = '';
+      let finalTextSource: SdkRunResult['finalTextSource'] = 'none';
       let numTurns = 0;
       let costUsd = 0;
       let isError = false;
@@ -75,9 +101,14 @@ export function createLiveSdkClient(): SdkClient {
       try {
         const stream = query({ prompt: opts.prompt, options: sdkOptions });
         for await (const msg of stream) {
+          if (messagesLogPath) {
+            appendFileSync(messagesLogPath, JSON.stringify(msg) + '\n', 'utf8');
+          }
+
           if (msg.type === 'assistant') {
             const inner = (msg.message as unknown as { usage?: BetaUsageLike } | undefined)?.usage;
             const snapshot = usage.add(deltaFromBetaUsage(inner));
+            assistantTextBuffer += extractAssistantText(msg.message);
             if (guard.check(snapshot).exceeded) {
               reachedTokenLimit = true;
               abortController.abort();
@@ -89,17 +120,30 @@ export function createLiveSdkClient(): SdkClient {
             isError = msg.is_error;
             permissionDenials = msg.permission_denials.length;
             if (msg.subtype === 'success') {
-              finalText = msg.result;
+              resultText = msg.result;
             }
           }
         }
       } catch (err) {
         isError = true;
-        finalText = `[sdk error] ${String(err)}`;
+        resultText = `[sdk error] ${String(err)}`;
+        finalTextSource = 'sdk-error';
+      }
+
+      let finalText: string;
+      if (resultText.trim().length > 0) {
+        finalText = resultText;
+        if (finalTextSource === 'none') finalTextSource = 'result';
+      } else if (assistantTextBuffer.trim().length > 0) {
+        finalText = assistantTextBuffer;
+        finalTextSource = 'fallback-assistant-text';
+      } else {
+        finalText = '';
       }
 
       return {
         finalText,
+        finalTextSource,
         numTurns,
         durationMs: Date.now() - start,
         costUsd,
@@ -130,6 +174,7 @@ export function createDryRunSdkClient(): SdkClient {
 
       return {
         finalText,
+        finalTextSource: 'result',
         numTurns: 1,
         durationMs: Date.now() - start,
         costUsd: 0,

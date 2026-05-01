@@ -28,8 +28,14 @@ export async function runStageWithPrompts(
     `--- 환경별 가드레일 정책 (오케스트레이터가 자동 주입) ---\n` +
     ctx.config.guardrails.policyText;
 
+  const messagesLogPath = ctx.runDir.stagePath(ctx.stage.id, 'messages.jsonl');
   const result = await ctx.sdk.run(
-    { model: ctx.stage.model, systemPrompt: fullSystemPrompt, prompt: prompts.userPrompt },
+    {
+      model: ctx.stage.model,
+      systemPrompt: fullSystemPrompt,
+      prompt: prompts.userPrompt,
+      messagesLogPath,
+    },
     { usage: ctx.usage, guard: ctx.guard },
   );
 
@@ -46,7 +52,13 @@ export async function runStageWithPrompts(
     stageId: ctx.stage.id,
     category: 'end',
     message: `${ctx.stage.id} 종료: ${status}`,
-    data: { numTurns: result.numTurns, costUsd: result.costUsd, usage: ctx.usage.current() },
+    data: {
+      numTurns: result.numTurns,
+      costUsd: result.costUsd,
+      finalTextSource: result.finalTextSource,
+      finalTextChars: result.finalText.length,
+      usage: ctx.usage.current(),
+    },
   });
 
   return {
@@ -58,6 +70,7 @@ export async function runStageWithPrompts(
     costUsd: result.costUsd,
     numTurns: result.numTurns,
     permissionDenials: result.permissionDenials,
+    finalTextSource: result.finalTextSource,
     error: result.isError ? result.finalText : undefined,
   };
 }
