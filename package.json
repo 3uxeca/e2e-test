@@ -13,6 +13,7 @@
     "sanity": "tsx src/index.ts --sanity",
     "dry-run": "DRY_RUN=true tsx src/index.ts",
     "start": "tsx src/index.ts",
+    "report": "tsx src/report/cli.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
