@@ -17,6 +17,12 @@ const LOGIN_URL = process.env.LOGIN_URL ?? `${TARGET_URL}/auth/login`;
 const TEST_EMAIL = process.env.TEST_EMAIL ?? 'facility@airport.co.kr';
 const TEST_PASSWORD = process.env.TEST_PASSWORD ?? '';
 
+// Seed assumptions — see docs/seed-assumptions.md.
+// Defaults reflect the week1 baseline (run #3) seed state.
+const SEED_LOG_COUNT = Number(process.env.SEED_LOG_COUNT ?? '73');
+const SEED_LOG_KEYWORD = process.env.SEED_LOG_KEYWORD ?? 'KPI_DATA_MISSING';
+const SEED_LOG_TOTAL_TEXT = `총 ${SEED_LOG_COUNT}개`;
+
 test.describe('관리자 / 시스템 로그 (검색·필터·CSV 저장)', () => {
   test.beforeAll(() => {
     if (!TEST_PASSWORD) {
@@ -52,7 +58,7 @@ test.describe('관리자 / 시스템 로그 (검색·필터·CSV 저장)', () =>
     await expect(totalCount).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole('button', { name: '검색하기' }).click();
-    await expect(totalCount).toContainText('총 73개', { timeout: 10_000 });
+    await expect(totalCount).toContainText(SEED_LOG_TOTAL_TEXT, { timeout: 10_000 });
 
     // 페이지네이션이 1, 2 페이지를 노출
     await expect(page.getByRole('button', { name: '1', exact: true })).toBeVisible();
@@ -65,26 +71,26 @@ test.describe('관리자 / 시스템 로그 (검색·필터·CSV 저장)', () =>
       .innerText();
 
     // ── 4) 카테고리 변경 + 키워드 검색 ───────────────────────────────
-    // 시드된 73건은 모두 코드명이 KPI_DATA_MISSING 이므로
-    // "코드명 + KPI_DATA_MISSING" 검색은 결정론적으로 hit 한다.
+    // 시드된 행은 모두 코드명이 SEED_LOG_KEYWORD 이므로
+    // "코드명 + SEED_LOG_KEYWORD" 검색은 결정론적으로 hit 한다.
     await page.getByRole('combobox').first().click();
     await page.getByRole('option', { name: '코드명', exact: true }).click();
     await page
       .getByRole('textbox', { name: '검색할 내용을 입력해주세요.' })
-      .fill('KPI_DATA_MISSING');
+      .fill(SEED_LOG_KEYWORD);
     await page.getByRole('button', { name: '검색하기' }).click();
 
-    // 검색 후에도 카운트 표시가 유지되어야 하고, 결과 셋이 [0, 73] 범위.
+    // 검색 후에도 카운트 표시가 유지되어야 하고, 결과 셋이 [0, SEED_LOG_COUNT] 범위.
     // (서버 검색이 0건일 가능성에도 깨지지 않도록 polling 으로 안정화 후 검사)
     await expect(totalCount).toBeVisible();
     await page.waitForTimeout(500);
     const filteredText = (await totalCount.first().textContent()) ?? '';
     const filteredCount = Number(filteredText.replace(/[^0-9]/g, ''));
     expect(filteredCount).toBeGreaterThanOrEqual(0);
-    expect(filteredCount).toBeLessThanOrEqual(73);
+    expect(filteredCount).toBeLessThanOrEqual(SEED_LOG_COUNT);
     if (filteredCount > 0) {
       await expect(
-        page.locator('table tbody').getByText('KPI_DATA_MISSING').first()
+        page.locator('table tbody').getByText(SEED_LOG_KEYWORD).first()
       ).toBeVisible();
     }
 
@@ -105,7 +111,7 @@ test.describe('관리자 / 시스템 로그 (검색·필터·CSV 저장)', () =>
     await page.getByRole('combobox').first().click();
     await page.getByRole('option', { name: '전체', exact: true }).click();
     await page.getByRole('button', { name: '검색하기' }).click();
-    await expect(totalCount).toContainText('총 73개', { timeout: 10_000 });
+    await expect(totalCount).toContainText(SEED_LOG_TOTAL_TEXT, { timeout: 10_000 });
 
     await page.getByRole('button', { name: '2', exact: true }).click();
     // 페이지 전환 후 첫 행이 1페이지의 첫 행과 다른지 확인
