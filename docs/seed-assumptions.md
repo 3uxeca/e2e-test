@@ -39,6 +39,17 @@
 |---|---|---|
 | `SEED_LOG_COUNT` | `/management/logs`의 기대 행 수 | spec이 baseline 값(73)을 사용 |
 | `SEED_LOG_KEYWORD` | 코드명 카테고리에서 ≥1건 hit하는 키워드 | spec이 baseline 값(`KPI_DATA_MISSING`)을 사용 |
+| `SEED_REPLAY_DATE` | `/dashboard/replay` 가 좌표 데이터를 가진 날짜 | stage1/stage3 가 임의 날짜를 시도하면 빈 데이터로 평가절하 또는 spec 깨짐 |
+| `SEED_REPLAY_START_TIME` | replay 좌표 데이터의 시작 시각 (HH:MM) | 동일 |
+| `SEED_REPLAY_END_TIME` | replay 좌표 데이터의 종료 시각 (HH:MM) | 동일 |
+
+## /dashboard/replay 시드 (사용자 확정 2026-05-05)
+| 항목 | 값 |
+|---|---|
+| 날짜 | `2026-04-05` |
+| 시작 시각 | `06:00` |
+| 종료 시각 | `07:00` |
+| 적용 대상 | `/dashboard/replay` 의 시간 슬라이더 / 날짜·시각 입력 |
 
 > 위 변수는 **현재 spec에 적용되어 있다.** 테스트가 다른 시드 환경에서도
 > 통과하도록 만들고 싶다면 `.env`에 위 변수를 채워 넣는다. 예:
