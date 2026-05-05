@@ -13,6 +13,9 @@ playwright-report/
 
 .omc/
 
+# Claude Code 프로젝트별 사용자 override (개인 권한 허용 등)
+.claude/settings.local.json
+
 .DS_Store
 *.log
 
