@@ -15,3 +15,7 @@ playwright-report/
 
 .DS_Store
 *.log
+
+# stage1 에이전트가 탐색 중 root 또는 임의 위치에 떨어뜨릴 수 있는 스크린샷.
+# baseline 산출물은 runs/<runId>/ 와 tests-generated/ 안에서만 보존한다.
+*.png
