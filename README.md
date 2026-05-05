@@ -96,6 +96,7 @@ docs/                      # 인터뷰·라이브별 결과·시드 가정·misc
 | 파일 | 내용 |
 |---|---|
 | [`PROJECT.md`](PROJECT.md) | 1주차 작업 명세 (요구사항·실험 단계·측정 지표) |
+| [`docs/stages.md`](docs/stages.md) | **stage1·2·3 한 페이지 참조** (정의·입출력·모델·prompt·다이어그램) |
 | [`docs/week1-setup-interview.md`](docs/week1-setup-interview.md) | Step 1 진입 전 사용자 인터뷰 정리 |
 | [`docs/run3-results.md`](docs/run3-results.md) | 첫 통과 baseline (자가수정 6회) |
 | [`docs/run4-results.md`](docs/run4-results.md) | stage1 prompt 보강 (자가수정 6→3) |
