@@ -23,6 +23,8 @@ export interface StageContext {
   usage: UsageAccumulator;
   guard: TokenGuard;
   prior: Partial<Record<StageId, StageOutput>>;
+  /** 사람 게이트가 결정한 최종 플로우(텍스트). stage3 가 우선 사용. */
+  selectedFlowText?: string;
 }
 
 export type StageStatus = 'completed' | 'token-limit-reached' | 'error';

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stageConfigs, totalTokenBudget, type StageId } from '../stages/config.js';
 import {
@@ -7,6 +7,11 @@ import {
   extractStage2Selection,
   parseSelfCorrections,
 } from './parsers.js';
+import type {
+  DecisionFinal,
+  HistoryEntry,
+  PicksJson,
+} from './picks-parser.js';
 import type {
   ReasoningWeight,
   ReportJson,
@@ -189,6 +194,22 @@ export function generateReport(opts: GenerateOptions = {}): GenerateResult {
   const selfCorrections = stage3 ? parseSelfCorrections(stage3.output.text) : [];
   const generatedTests = stage3 ? extractGeneratedTestPaths(stage3.output.text) : [];
 
+  const picksPath = join(runsRoot, runId, 'stage2-prioritize', 'picks.json');
+  const picks: PicksJson | null = existsSync(picksPath)
+    ? (JSON.parse(readFileSync(picksPath, 'utf8')) as PicksJson)
+    : null;
+  const decisionPath = join(runsRoot, runId, 'decision-final.json');
+  const decision: DecisionFinal | null = existsSync(decisionPath)
+    ? (JSON.parse(readFileSync(decisionPath, 'utf8')) as DecisionFinal)
+    : null;
+  const historyPath = 'data/experiment-history.jsonl';
+  const history: HistoryEntry[] = existsSync(historyPath)
+    ? readFileSync(historyPath, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .map((l) => JSON.parse(l) as HistoryEntry)
+    : [];
+
   const causeCounts = selfCorrections.reduce<Record<string, number>>((acc, row) => {
     acc[row.failureCause] = (acc[row.failureCause] ?? 0) + 1;
     return acc;
@@ -254,18 +275,61 @@ export function generateReport(opts: GenerateOptions = {}): GenerateResult {
     lines.push('');
   }
 
-  // ── 2.4 stage2 선택 ────────────────────────────────────────────────
-  if (stage2Selection) {
-    lines.push('### 2.4 stage2 선택 결과 (라이브 간 비교용)');
-    lines.push(`- 선택 플로우: **${stage2Selection.flowName ?? '(이름 추출 실패 — stage2 output.md 직접 확인)'}**`);
-    if (stage2Selection.route) lines.push(`- 라우트: \`${stage2Selection.route.replace(/`/g, '')}\``);
-    if (stage2Selection.droppedCandidates.length > 0) {
-      lines.push(`- 탈락 후보 ${stage2Selection.droppedCandidates.length}건:`);
-      for (const c of stage2Selection.droppedCandidates) {
-        lines.push(`  - ${c.slice(0, 200)}`);
+  // ── 2.4 stage2 후보 + 사람 결정 + 누적 통계 ─────────────────────────
+  if (picks) {
+    lines.push('### 2.4 stage2 우선순위 후보 (top 3) + 사람 결정');
+    lines.push('| rank | route | confidence | flowName |');
+    lines.push('|---|---|---|---|');
+    for (const c of [...picks.candidates].sort((a, b) => a.rank - b.rank)) {
+      lines.push(`| ${c.rank} | \`${c.route}\` | ${c.confidence}/5 | ${c.flowName} |`);
+    }
+    lines.push('');
+    if (decision) {
+      const hp = decision.humanPick;
+      lines.push(`- 에이전트 1순위: \`${decision.agentTop1Route ?? '(없음)'}\``);
+      if (hp.source === 'agent-pick') {
+        lines.push(
+          `- 사람 최종 선택: rank ${hp.index} \`${hp.route}\` ` +
+            (decision.agreement ? '(✅ 에이전트 1순위와 일치)' : '(⚠️ 1순위와 불일치)'),
+        );
+      } else {
+        lines.push(`- 사람 최종 선택: **custom** "${hp.custom}" (⚠️ 에이전트 top3 모두 거부)`);
+      }
+      if (hp.comment) {
+        lines.push(`- 사람 코멘트: "${hp.comment}"`);
+      } else if (!decision.agreement) {
+        lines.push('- 사람 코멘트: (없음 — 불일치인데 코멘트 권장)');
       }
     } else {
-      lines.push('- 탈락 후보: (추출 실패 또는 명시되지 않음)');
+      lines.push('- 사람 결정 미기록 (decision-final.json 없음 — `pnpm continue` 미실행 또는 실패)');
+    }
+    lines.push('');
+  } else if (stage2Selection) {
+    // 레거시 폴백 (picks.json 없는 옛 라이브)
+    lines.push('### 2.4 stage2 선택 결과 (legacy 형식)');
+    lines.push(`- 선택 플로우: **${stage2Selection.flowName ?? '(이름 추출 실패)'}**`);
+    if (stage2Selection.route) lines.push(`- 라우트: \`${stage2Selection.route}\``);
+    if (stage2Selection.droppedCandidates.length > 0) {
+      lines.push(`- 탈락 후보 ${stage2Selection.droppedCandidates.length}건:`);
+      for (const c of stage2Selection.droppedCandidates) lines.push(`  - ${c.slice(0, 200)}`);
+    }
+    lines.push('');
+  }
+
+  // 누적 통계 (data/experiment-history.jsonl 기반)
+  if (history.length > 0) {
+    const total = history.length;
+    const agreed = history.filter((h) => h.agreement).length;
+    lines.push('### 2.4.b 누적: 에이전트 1순위 vs 사람 최종 선택 일치율');
+    lines.push(`- 총 라이브 ${total}회 중 일치 **${agreed}회 (${((agreed / total) * 100).toFixed(0)}%)**`);
+    const recent = history.slice(-5);
+    if (recent.length > 0) {
+      lines.push('- 최근 5회:');
+      for (const h of recent) {
+        const flag = h.agreement ? '✅' : '⚠️';
+        const cmt = h.comment ? ` — "${h.comment}"` : '';
+        lines.push(`  - ${flag} ${h.runId} → agent: \`${h.agentTop1Route ?? '?'}\` / human: \`${h.humanPickRoute ?? `(custom)`}\`${cmt}`);
+      }
     }
     lines.push('');
   }

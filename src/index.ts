@@ -2,52 +2,86 @@ import { loadConfig, type AppConfig } from './config.js';
 import { playwrightMcpServers } from './mcp/playwright.js';
 import { stageConfigs, totalTokenBudget } from './stages/config.js';
 import { runOrchestrator } from './orchestrator/runner.js';
+import { continueRun } from './orchestrator/continue.js';
 import { createDryRunSdkClient, createLiveSdkClient } from './sdk/client.js';
 
 type Mode = 'sanity' | 'dry-run' | 'live';
 
-function detectMode(): Mode {
-  if (process.argv.includes('--sanity')) return 'sanity';
-  if (process.env.DRY_RUN === 'true') return 'dry-run';
-  return 'live';
+interface CliFlags {
+  mode: Mode;
+  autoPick?: 1 | 2 | 3;
+}
+
+function parseFlags(): CliFlags {
+  const argv = process.argv.slice(2);
+  const flags: CliFlags = {
+    mode: argv.includes('--sanity')
+      ? 'sanity'
+      : process.env.DRY_RUN === 'true'
+        ? 'dry-run'
+        : 'live',
+  };
+  for (const a of argv) {
+    if (a.startsWith('--auto-pick=')) {
+      const n = Number(a.split('=')[1]);
+      if (n === 1 || n === 2 || n === 3) flags.autoPick = n;
+    }
+  }
+  return flags;
 }
 
 async function main() {
   const cfg = loadConfig();
-  const mode = detectMode();
+  const flags = parseFlags();
 
-  if (mode === 'sanity') {
+  if (flags.mode === 'sanity') {
     printSanity(cfg);
     return;
   }
 
-  const sdk = mode === 'dry-run' ? createDryRunSdkClient() : createLiveSdkClient();
-  console.log(`[cartographer] mode=${mode} env=${cfg.env}`);
-  const report = await runOrchestrator(cfg, sdk);
+  const sdk = flags.mode === 'dry-run' ? createDryRunSdkClient() : createLiveSdkClient();
+  console.log(`[cartographer] mode=${flags.mode} env=${cfg.env}` + (flags.autoPick ? ` auto-pick=${flags.autoPick}` : ' (human-gate)'));
 
-  console.log('\n[cartographer] orchestrator finished');
-  console.log(`  runId             = ${report.runId}`);
-  console.log(`  runRoot           = ${report.runRoot}`);
-  console.log(`  totalDurationMs   = ${report.totalDurationMs}`);
-  console.log(`  totalCostUsd      = $${report.totalCostUsd.toFixed(4)}`);
+  // Default: run stages 1+2 only, then exit and instruct human gate.
+  // --auto-pick=N: run all stages, with stage3 using picks #N (or fallback).
+  const stage12Report = await runOrchestrator(cfg, sdk, { stopAfterStage2: true });
+
+  console.log('\n[cartographer] stage1+2 finished');
+  console.log(`  runId             = ${stage12Report.runId}`);
+  console.log(`  runRoot           = ${stage12Report.runRoot}`);
   console.log(
-    `  totalTokens used  = ${report.totalUsage.totalTokens.toLocaleString()} / ` +
-      `${totalTokenBudget.toLocaleString()}  (input+output, PROJECT.md 정의)` +
-      (report.reachedTotalBudget ? '  [BUDGET REACHED]' : ''),
+    `  totalTokens (so far) = ${stage12Report.totalUsage.totalTokens.toLocaleString()} ` +
+      `(input+output, PROJECT.md 정의)`,
   );
   console.log(
-    `  cache tokens      = creation ${report.totalUsage.cacheCreationInputTokens.toLocaleString()}, ` +
-      `read ${report.totalUsage.cacheReadInputTokens.toLocaleString()}`,
+    `  totalCostUsd        = $${stage12Report.totalCostUsd.toFixed(4)} (Console pricing equivalent)`,
   );
-  for (const r of report.stageResults) {
+  for (const r of stage12Report.stageResults) {
     console.log(
       `  - ${r.stageId.padEnd(20)} status=${r.status.padEnd(20)} ` +
         `tokens=${r.usage.totalTokens.toString().padStart(7)} ` +
-        `cost=$${r.costUsd.toFixed(4)} ` +
-        `turns=${r.numTurns.toString().padStart(2)} ` +
-        `denials=${r.permissionDenials} ` +
-        `duration=${r.durationMs}ms`,
+        `turns=${r.numTurns.toString().padStart(2)} duration=${r.durationMs}ms`,
     );
+  }
+
+  if (flags.autoPick) {
+    console.log(`\n[cartographer] --auto-pick=${flags.autoPick} → 사람 게이트 우회, 자동 continue`);
+    const { decision, report } = await continueRun(cfg, sdk, {
+      runId: stage12Report.runId,
+      pick: flags.autoPick,
+    });
+    console.log(`[continue] agreement=${decision.agreement}`);
+    console.log(`[continue] totalCostUsd = $${report.totalCostUsd.toFixed(4)}`);
+  } else {
+    console.log('\n[cartographer] 사람 게이트 대기 — 다음 단계 안내');
+    console.log(`  picks 후보 보기:`);
+    console.log(`    cat runs/${stage12Report.runId}/stage2-prioritize/picks.json`);
+    console.log(`  계속 진행 (에이전트 1순위 그대로):`);
+    console.log(`    pnpm continue ${stage12Report.runId}`);
+    console.log(`  순위 변경 (예: 2순위로 + 코멘트):`);
+    console.log(`    pnpm continue ${stage12Report.runId} --pick=2 --comment="..."`);
+    console.log(`  새 플로우 직접 지정:`);
+    console.log(`    pnpm continue ${stage12Report.runId} --custom="..." --comment="..."`);
   }
 }
 
