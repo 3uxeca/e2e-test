@@ -4,6 +4,7 @@ import { stageConfigs, totalTokenBudget, type StageId } from '../stages/config.j
 import {
   countFeaturesFromStage1,
   extractGeneratedTestPaths,
+  extractStage2Selection,
   parseSelfCorrections,
 } from './parsers.js';
 import type {
@@ -184,6 +185,7 @@ export function generateReport(opts: GenerateOptions = {}): GenerateResult {
   const stage3Roll = stage3 ? rollupStage(stage3, report) : undefined;
 
   const features = stage1 ? countFeaturesFromStage1(stage1.output.text) : undefined;
+  const stage2Selection = stage2 ? extractStage2Selection(stage2.output.text) : undefined;
   const selfCorrections = stage3 ? parseSelfCorrections(stage3.output.text) : [];
   const generatedTests = stage3 ? extractGeneratedTestPaths(stage3.output.text) : [];
 
@@ -252,8 +254,24 @@ export function generateReport(opts: GenerateOptions = {}): GenerateResult {
     lines.push('');
   }
 
-  // ── 2.4 자가 수정 ─────────────────────────────────────────────────
-  lines.push('### 2.4 자가 수정 회수 (stage3)');
+  // ── 2.4 stage2 선택 ────────────────────────────────────────────────
+  if (stage2Selection) {
+    lines.push('### 2.4 stage2 선택 결과 (라이브 간 비교용)');
+    lines.push(`- 선택 플로우: **${stage2Selection.flowName ?? '(이름 추출 실패 — stage2 output.md 직접 확인)'}**`);
+    if (stage2Selection.route) lines.push(`- 라우트: \`${stage2Selection.route.replace(/`/g, '')}\``);
+    if (stage2Selection.droppedCandidates.length > 0) {
+      lines.push(`- 탈락 후보 ${stage2Selection.droppedCandidates.length}건:`);
+      for (const c of stage2Selection.droppedCandidates) {
+        lines.push(`  - ${c.slice(0, 200)}`);
+      }
+    } else {
+      lines.push('- 탈락 후보: (추출 실패 또는 명시되지 않음)');
+    }
+    lines.push('');
+  }
+
+  // ── 2.5 자가 수정 ─────────────────────────────────────────────────
+  lines.push('### 2.5 자가 수정 회수 (stage3)');
   lines.push(`- 총 회수: **${selfCorrections.length}** (PROJECT.md 한도: ${SELF_CORRECTION_LIMIT})`);
   if (selfCorrections.length > 0) {
     lines.push('- 회차별 변경 요지:');

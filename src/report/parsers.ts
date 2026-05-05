@@ -115,3 +115,52 @@ export function extractGeneratedTestPaths(stage3Markdown: string): string[] {
   }
   return paths;
 }
+
+export interface Stage2Selection {
+  flowName?: string;
+  route?: string;
+  droppedCandidates: string[];
+}
+
+function stripDecoration(value: string): string {
+  return value
+    .trim()
+    .replace(/^\*{1,2}/, '')
+    .replace(/\*{1,2}$/, '')
+    .replace(/^[`:\s]+/, '')
+    .replace(/[`:\s]+$/, '')
+    .trim();
+}
+
+function takeFirstLineMatch(markdown: string, label: string): string | undefined {
+  // Allow optional list bullet, optional bold markers, then `<label>:` then value.
+  // label is a regex fragment (e.g. '플로우\\s*이름').
+  const re = new RegExp(`^\\s*[-*]?\\s*\\*{0,2}\\s*${label}\\s*\\*{0,2}\\s*:\\s*(.+?)\\s*$`, 'm');
+  const m = markdown.match(re);
+  return m && m[1] ? stripDecoration(m[1]) : undefined;
+}
+
+export function extractStage2Selection(stage2Markdown: string): Stage2Selection {
+  const flowName = takeFirstLineMatch(stage2Markdown, '플로우\\s*이름');
+  const route = takeFirstLineMatch(stage2Markdown, '라우트');
+
+  const droppedCandidates: string[] = [];
+  const headingIdx = stage2Markdown.search(/탈락(한)?\s*(플로우|후보)/);
+  if (headingIdx >= 0) {
+    const tail = stage2Markdown.slice(headingIdx);
+    const lines = tail.split('\n');
+    // Skip the heading line itself, then collect any bullet items (flat or nested)
+    // until the next markdown heading.
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line === undefined) break;
+      if (/^#{1,6}\s/.test(line)) break;
+      const m = line.match(/^[\t ]*-\s+(.+)$/);
+      // 탈락 후보 라인은 보통 인라인 backtick(`/route`)으로 시작하므로
+      // markdown 그대로 보존한다 (decoration strip 안 함).
+      if (m && m[1]) droppedCandidates.push(m[1].trim());
+    }
+  }
+
+  return { flowName, route, droppedCandidates };
+}
