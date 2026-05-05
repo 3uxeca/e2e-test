@@ -7,8 +7,11 @@ export interface StageConfig {
   tokenLimit: number;
 }
 
-// 1주차: 모든 단계에서 Claude Opus 4.7 단일 모델 사용 (정직한 baseline 확보).
-// 2주차에 단계별 모델 분리(예: stage2를 Sonnet) 시 이 파일만 수정한다.
+// 단계별 모델 정책 (1주차 → 2주차 escalation):
+// - 1주차 baseline (run #3, run #4): 모든 단계에서 Claude Opus 4.7.
+// - 2주차 P1-B (현재): stage2만 Sonnet 4.6 다운그레이드 (1턴/추론only 패턴이라
+//   가장 안전한 첫 분리 후보). 나머지는 Opus 유지. 품질이 떨어지면 즉시 롤백.
+//   상세는 docs/week2-plan.md, docs/run4-results.md §4 참고.
 export const stageConfigs: Record<StageId, StageConfig> = {
   'stage1-mapping': {
     id: 'stage1-mapping',
@@ -19,7 +22,7 @@ export const stageConfigs: Record<StageId, StageConfig> = {
   'stage2-prioritize': {
     id: 'stage2-prioritize',
     description: '우선순위 판단',
-    model: 'claude-opus-4-7',
+    model: 'claude-sonnet-4-6',
     tokenLimit: 15_000,
   },
   'stage3-test': {
