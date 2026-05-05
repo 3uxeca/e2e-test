@@ -149,16 +149,38 @@ export function extractStage2Selection(stage2Markdown: string): Stage2Selection 
   if (headingIdx >= 0) {
     const tail = stage2Markdown.slice(headingIdx);
     const lines = tail.split('\n');
-    // Skip the heading line itself, then collect any bullet items (flat or nested)
-    // until the next markdown heading.
+    // Skip the heading line itself, then collect items in either bullet or
+    // markdown table form until the next markdown heading.
+    let inTableBody = false;
     for (let i = 1; i < lines.length; i += 1) {
       const line = lines[i];
       if (line === undefined) break;
       if (/^#{1,6}\s/.test(line)) break;
-      const m = line.match(/^[\t ]*-\s+(.+)$/);
-      // 탈락 후보 라인은 보통 인라인 backtick(`/route`)으로 시작하므로
-      // markdown 그대로 보존한다 (decoration strip 안 함).
-      if (m && m[1]) droppedCandidates.push(m[1].trim());
+
+      // Bullet form: "- ..." or "  - ..." (인라인 backtick 보존)
+      const bm = line.match(/^[\t ]*-\s+(.+)$/);
+      if (bm && bm[1]) {
+        droppedCandidates.push(bm[1].trim());
+        continue;
+      }
+
+      // Table separator "|---|---|" → 다음 라인부터 data row
+      if (/^\|[\s|\-:]+\|\s*$/.test(line)) {
+        inTableBody = true;
+        continue;
+      }
+
+      // Table data row "| col1 | col2 | ..." (header row 만나면 separator
+      // 전이라 inTableBody=false → skip)
+      const tm = line.match(/^\|(.+)\|\s*$/);
+      if (tm && tm[1] && inTableBody) {
+        const cells = tm[1].split('|').map((c) => c.trim()).filter((c) => c.length > 0);
+        if (cells.length >= 2) {
+          droppedCandidates.push(`${cells[0]} — ${cells.slice(1).join(' | ')}`);
+        } else if (cells.length === 1) {
+          droppedCandidates.push(cells[0]!);
+        }
+      }
     }
   }
 
